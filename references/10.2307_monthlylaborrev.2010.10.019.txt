@@ -1,0 +1,12 @@
+@article{10.2307/monthlylaborrev.2010.10.019,
+ ISSN = {00981818, 19374658},
+ URL = {http://www.jstor.org/stable/monthlylaborrev.2010.10.019},
+ abstract = {New data available from the Current Population Survey (CPS) indicate that between October 2008 and June 2010, job losses among workers with disabilities far exceeded those of workers without disabilities; this labor market volatility resulted in the proportion of employed U.S. workers identified as having disabilities declining by 9 percent},
+ author = {H. Stephen Kaye},
+ journal = {Monthly Labor Review},
+ pages = {19-30},
+ publisher = {Bureau of Labor Statistics, U.S. Department of Labor},
+ title = {The impact of the 2007–09 recession on workers with disabilities},
+ year = {2010}
+}
+

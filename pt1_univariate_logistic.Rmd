@@ -1,0 +1,1109 @@
+---
+title: "Mental Health in the National Health Interview Survey 2007-2013"
+author: "Vincent La"
+date: "June 12, 2017"
+output: pdf_document
+bibliography: bibliography.bibtex
+---
+
+```{r include=FALSE}
+source('functions.R')
+source('data.R')
+source('roc_plot.R')
+```
+
+```{r "Regression Table Strings"}
+REG_TABLE_DEP_VARS <- c("Felt Worthless", "Felt Hopeless", "Abnormal Sleep")
+REG_TABLE_NOTE.INCOME <- c("When controlling for income, the lowest income bracket was the left out group")
+```
+
+# Introduction
+The consequences of neglecting mental health can be just as serious as neglecting one's phyisical health. For example, the National Institute of Mental Health esetimated in 2015 that 6.7\% of US adults suffered an episode of major depression, with 2.4\% of adults suffering an episode which severely impaired their daily lives. [@nimh_depression] However, mental illness is often referred to as an invisible illness because its afflictions are not as obvious as those caused by physical illnesses. While the quality of mental health services has risen throughout the years, people remain reticent on their mental health. Stigma associated with being labelled "mentally ill" is well-documented as a primary reason for this reluctance in both the general American population, [@corrigan2004stigma] and in combat veterans returning from duty in Iraq and Afghanistan. [@hoge2004combat]
+
+# Data and Methodology
+This study utilized logistic regression, decision trees, and random forests to analyze the *National Health Interview Survey* data from 2007-2013. The National Health Interview Survey is one of the largest and most comprehensive surveys of Americans. Organized by the Centers for Disease Control and carried out with Census Bureau employees, this annual survey interviews a random but representative sample of American households every year. Each year's survey data is divided into several files, each containing a specific set of variables. For example, in every household the interviewer may ask a random adult more detailed questions--answers which are then recoded in the Sample Adult file. The majority of this study's analysis was done by linking the person, family, and sample adult level files.
+
+## Aggregating Data
+In order to gain higher precision estimates, and to be able to analyze changes over time, data from different survey years were aggregated. However, this was not straightforward. Due to sampling design and non-response, the National Health Interview Survey oversamples certain groups of the American population. As a result, survey weights--the sum of which equals the total population in that point in time--were attached to each year's data.
+
+For the analysis to be statistically valid, these weights also must be modified when rearranging the data. In addition to joining data across files, it is also possible to join data cross years. This is done to increase the sample size available and increase the precision of our estimates. However, two issues arise when doing so. Some variable names and definitions may change, which can be rectified by reading the attached documention. Secondly, the weights will need to be recalculated. Per the documentation, multi-year analyses are conducted by dividing the weights by the number of years being analyzed.
+
+## Missing Data
+A small but significant portion of the observations were removed due to missing values in either a predictor or response variable. As a result, only 158,803 out of 175,001 $(90.74\%)$ possible observations were used.
+
+## Model Building
+Because of the large number of potential covariates being studied, a strategy was devised to build
+the final model. First, covariates were considered on a univariate basis. If they were part of a group
+of dummy variables, e.g. $Black$, $Asian$, etc., then the dummies were regressed in as a group. Possible
+interaction effects were then attached to the univariate regressions. Plots of predictors over time
+were used to assess if there were variations over time. Finally, multiple logistic 
+regression models were constructed by including predictors that were significant at the 80\% level.
+
+# How Mental Distress Was Measured
+This study assessed the prevalence of psychological distress in the American population through responses to three questions contained in the Sample Adult file:
+
+ 1. How often a person felt worthless in the past 30 days
+ 2. How often he or she felt hopeless in the past 30 days
+ 3. On average, how much sleep a person gets in a 24-hour period
+
+These attributes were chosen since they are useful on their own for evaluating mental distress in an individual. For example, one study found that feelings of hopelessness provided a link between severity of depression and suicide, and that degree of hopelessness predicted suicide more strongly than severity of depression. [@kovacs1985hopelessness] Furthermore, these are part of the criteria used for diagnosing major depression in the fifth edition of the *Diagonistic and Statistical Manual of Mental Disorders*. [@psych_central_2017]
+
+## Feelings of Worthlessness and Hopelessness
+The responses to the questions regarding worthlessness and hopelessness were coded on a 1-5 scale:
+
+ 1. All of the time
+ 2. Most of the time
+ 3. Some of the time
+ 4. A little of the time
+ 5. None of the time
+
+Because only a small proportion of respondents affirmed that they had feelings of worthlessness or hopelessness, a dichtonomous variable was created by separating responses into two groups--those that felt worthless or hopeless at least a little of the time (1-4) and those that never felt worthless or hopeless (5).
+
+As a result of this coding change, I was reduced from being able to assess the severity of mental distress to merely being able to detect its presence. However, this change also simplified my problem as regressions could be estimated with binomial--rather than more complicated multinomial--logistic regressions. Furthermore, I still encountered difficulty building a reliable model for predicting binary outcomes. These difficulties would only be magnified if my model had to distinguish between levels of mental distress as well. Lastly, but most importantly, this coding change ameliorates the possibility that survey respondents would underreport their levels of mental distress to an unfamilar Census Bureau employee conducting the survey.
+
+```{r "Get Data"}
+# feeling_bad <- collect(tbl(nhis_db, sql("
+# SELECT * FROM
+# 
+#   (SELECT
+#     worthless, sum(weight_sa) as worthless_count
+#   FROM depression_all
+#   GROUP BY worthless) as worthless_tbl
+# 
+#   JOIN
+# 
+#   (SELECT 
+#     hopeless, sum(weight_sa) as hopeless_count
+#   FROM depression_all
+#   GROUP BY hopeless) as hopeless_tbl
+# 
+# ON worthless = hopeless
+# ")))
+# 
+# write.csv(feeling_bad, "feeling_bad.csv")
+
+feeling_bad <- read.csv('feeling_bad.csv', header=TRUE)
+```
+
+```{r "Preliminary Data Visualization"}
+ggplot(melt(feeling_bad %>% select(-hopeless), id.vars=c("worthless")),
+       aes(x=worthless, y=value)) +
+  geom_bar(aes(fill=variable), position='dodge', stat='identity') + 
+  labs(title="Feelings of Hopelessness and Worthlessness",
+       caption="National Health Interview Survey 2007-2013: Sample Adult File",
+       x="", y="Weighted Count")
+```
+
+Reported feelings of worthlessness in the NHIS is on a positive trend. Whether this is a result of 
+incresed mental distress or greater honesty about internal feelings is undetermined.
+
+```{r "Worthless vs. Time"}
+worthless.plot <- worthless_by_group()
+
+ggplot(worthless.plot,
+       aes(x=time, y=value, group=1)) +
+  geom_line(size=1.5) +
+  labs(title="Reported Feelings of Worthlessness Increase",
+       subtitle="Weighted average of survey respondents",
+       x="Quarter of Interview", y="Percent of Respondents") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+## Quantity of Sleep
+A new feature used in the following regressions was constructed from the amount of sleep a person had--abnormal sleep--which was defined as having less than 6 or more than 10 hours of sleep.
+
+# Unweighted Summary Statistics for the NHIS 2007-2013 Sample Adult File
+```{r "Summary Statistics"}
+# ==== Time ===
+sa_time <- dep %>%
+  count(srvy_yr, intv_qrt)
+
+names(sa_time) = c("Survey Year", "Survey Quarter", "n")
+
+# ==== Age ====
+sa_age <- dep %>%
+  summarise(Average=mean(age),
+            Median=median(age),
+            `Standard Deviation`=sd(age))
+
+# ==== Sex ====
+sa_sex <- dep %>%
+  count(Male=male)
+
+# ==== Income ====
+sa_income <- dep %>%
+  group_by(fam_income, fam_income_name) %>%
+  count() %>%
+  ungroup() %>%
+  select(-fam_income)
+
+names(sa_income) = c("Family Income", "n")
+
+# ==== Race ====
+# Unweighted
+sa_race <- rbind(c("n"), c("Percent"))
+sa_race <- cbind(sa_race, rbind(
+  dep %>%
+    select(hispanic, white, black, asian, other_race) %>%
+    summarise_all(sum),
+  dep %>%
+    select(hispanic, white, black, asian, other_race) %>%
+    summarise_all(mean)))
+
+names(sa_race) = c("", "Hispanic, any race",
+                   "White (Non-Hispanic)",
+                   "Black (Non-Hispanic)",
+                   "Asian (Non-Hispanic)",
+                   "Other Race (Non-Hispanic)")
+
+# ==== Response Variables ====
+sa_resp <- dep %>%
+  select(worthless, hopeless, sleep) %>%
+  summarise_all(funs(mean, sd))
+
+sa_mod_resp <- dep %>%
+  select(worthless_once, hopeless_once, abnormal_sleep) %>%
+  summarise_all(funs(mean))
+
+# # Weighted
+# sa_race.wgt <- dep %>%
+#   select(hispanic, white, black, asian, other_race) %>%
+#   summarise_all(.funs=funs(weighted.mean(., w=dep$weight_sa)))
+# 
+# sa_race <- rbind(c("Unweighted"), c("Weighted"))
+# sa_race <- cbind(sa_race, rbind(sa_race.nowgt, sa_race.wgt))
+```
+
+## Time of Survey
+```{r results='show'}
+pander(as.data.frame(sa_time))
+```
+
+## Demographic Control Variables
+```{r results='show'}
+pander(as.data.frame(sa_sex))
+
+```
+
+### Age
+```{r results='show'}
+pander(as.data.frame(sa_age))
+```
+
+### Income
+```{r results='show'}
+pander(as.data.frame(sa_income))
+```
+
+### Race and Ethnicity
+```{r results='show'}
+pander(as.data.frame(sa_race))
+```
+
+## Response Variables
+### Original Survey Variables
+```{r results='show'}
+pander(as.data.frame(sa_resp))
+```
+
+### Modified Variables
+These are the frequencies (in terms of percentages) of the features I created from existing survey attributes.
+```{r results='show'}
+pander(as.data.frame(sa_mod_resp))
+```
+
+# Logistic Regression
+## Age
+Age was not significant as a predictor of feelings of worthlessness. It was however, found to be 
+significant at the 99\% level to be negatively associated with feelings of hopelessness but
+positive associated with levels of "abnormal sleep". While the former finding suggests that older
+Americans are less likely to be depressed, the latter may simply be a result of old age rather than
+any underlying mental issues.
+
+```{r "Age GLM", eval=FALSE}
+worthless_age.glm <- dep_glm(worthless_once ~ age)
+hopeless_age.glm <- dep_glm(hopeless_once ~ age)
+sleep_age.glm <- dep_glm(abnormal_sleep ~ age)
+```
+
+```{r "Age Regression Table", eval=FALSE}
+stargazer(worthless_age.glm, hopeless_age.glm, sleep_age.glm,
+  title="Age and Symptoms of Depressions",
+  no.space = TRUE,
+  omit.table.layout = "s",
+  dep.var.labels = REG_TABLE_DEP_VARS)
+```
+
+\begin{table}[!htbp] \centering 
+  \caption{Age and Symptoms of Depressions} 
+  \label{} 
+\begin{tabular}{@{\extracolsep{5pt}}lccc} 
+\\[-1.8ex]\hline 
+\hline \\[-1.8ex] 
+ & \multicolumn{3}{c}{\textit{Dependent variable:}} \\ 
+\cline{2-4} 
+\\[-1.8ex] & Felt Worthless & Felt Hopeless & Abnormal Sleep \\ 
+\\[-1.8ex] & (1) & (2) & (3)\\ 
+\hline \\[-1.8ex] 
+ age & 0.0002 & $-$0.002$^{***}$ & 0.005$^{***}$ \\ 
+  & (0.001) & (0.001) & (0.001) \\ 
+  Constant & $-$2.241$^{***}$ & $-$1.829$^{***}$ & $-$2.474$^{***}$ \\ 
+  & (0.035) & (0.031) & (0.035) \\ 
+ \hline \\[-1.8ex] 
+\hline 
+\hline \\[-1.8ex] 
+\textit{Note:}  & \multicolumn{3}{r}{$^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01} \\ 
+\end{tabular} 
+\end{table} 
+
+## Race
+Contrary to my expections, there was no significant interaction effect between race and time 
+throughout the recession. The estimates of feelings of worthlessness for "Other Race" varies
+erratically throughout time, although this may simply be an artifact of their relatively low 
+sample size.
+
+```{r "Race GLM", eval=FALSE}
+# Race: Whites baseline
+worthless_race.glm <- dep_glm(worthless_once ~ black + asian + hispanic + other_race)
+hopeless_race.glm <- dep_glm(hopeless_once ~ black + asian + hispanic + other_race)
+sleep_race.glm <- dep_glm(abnormal_sleep ~ black + asian + hispanic + other_race)
+
+# summary(worthless_race.glm)
+# summary(hopeless_race.glm)
+# summary(sleep_race.glm)
+```
+
+```{r "Worthlessness By Race"}
+worthless_race.plot <- worthless_by_group("race_name")
+
+ggplot(worthless_race.plot,
+       aes(x=time, y=value, color=race_name, group=race_name)) +
+  geom_line(size=1.5) +
+  ggtitle("How many times in the past 30 days did you feel worthless") + 
+  xlab("Time") + ylab("Percent") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+```{r "Race Regression Tables", eval=FALSE}
+stargazer(worthless_race.glm, hopeless_race.glm, sleep_race.glm,
+  title = "Relationship Between Race and Symptoms of Depression",
+  covariate.labels = c("Black", "Asian", "Hispanic", "Other Race"),
+  no.space = TRUE,
+  omit.table.layout = "s",
+  dep.var.labels = REG_TABLE_DEP_VARS)
+```
+
+\begin{table}[!htbp] \centering 
+  \caption{Relationship Between Race and Symptoms of Depression} 
+  \label{} 
+\begin{tabular}{@{\extracolsep{5pt}}lccc} 
+\\[-1.8ex]\hline 
+\hline \\[-1.8ex] 
+ & \multicolumn{3}{c}{\textit{Dependent variable:}} \\ 
+\cline{2-4} 
+\\[-1.8ex] & Felt Worthless & Felt Hopeless & Abnormal Sleep \\ 
+\\[-1.8ex] & (1) & (2) & (3)\\ 
+\hline \\[-1.8ex] 
+ Black & $-$0.041 & 0.038 & 0.542$^{***}$ \\ 
+  & (0.035) & (0.031) & (0.030) \\ 
+  Asian & $-$0.258$^{***}$ & $-$0.205$^{***}$ & $-$0.299$^{***}$ \\ 
+  & (0.057) & (0.051) & (0.059) \\ 
+  Hispanic & 0.075$^{**}$ & 0.318$^{***}$ & $-$0.033 \\ 
+  & (0.032) & (0.027) & (0.033) \\ 
+  Other Race & 0.404$^{***}$ & 0.396$^{***}$ & 0.626$^{***}$ \\ 
+  & (0.112) & (0.102) & (0.102) \\ 
+  Constant & $-$2.232$^{***}$ & $-$1.991$^{***}$ & $-$2.301$^{***}$ \\ 
+  & (0.015) & (0.014) & (0.016) \\ 
+ \hline \\[-1.8ex] 
+\hline 
+\hline \\[-1.8ex] 
+\textit{Note:}  & \multicolumn{3}{r}{$^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01} \\ 
+\end{tabular} 
+\end{table} 
+
+## Sex
+There was no noticeable interaction between sex and time in regards to symptoms of worthlessness. However, a higher proportion of women consistently reported feelings of worthlessness. This parallels the findings of the 2015 National Survey on Drug Use and Health which estimated 8.5\% of women having a major depressive episode (5.5\% experiencing a depressive episode without severe impairment) but only 3.0\% of men having a major depressive episode (3.0\% without severe impairment). [@nimh_depression]
+
+```{r "Worthless by Sex Plot"}
+worthless_male.plot <- worthless_by_group("male")
+
+ggplot(worthless_male.plot,
+       aes(x=time, y=value, color=male, group=male)) +
+  geom_line(size=1.5) +
+  scale_color_continuous(
+    name="Sex",
+    breaks=c(1, 0),
+    labels=c("Male", "Female")
+  ) +
+  labs(title="Women Have a Greater Risk of Feelings of Worthlessness",
+       x="Quarter of Interview", y="Percent of Respondents") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+```{r "Sex GLM", eval=FALSE}
+worthless_sex.glm <- dep_glm(worthless_once ~ male)
+hopeless_sex.glm <- dep_glm(hopeless_once ~ male)
+sleep_sex.glm <- dep_glm(abnormal_sleep ~ male)
+```
+
+```{r "Sex Regression Tables", eval=FALSE}
+stargazer(worthless_sex.glm, hopeless_sex.glm, sleep_sex.glm,
+  title = "Sex and Symptoms of Depression",
+  no.space = TRUE,
+  omit.table.layout = "s",
+  dep.var.labels = REG_TABLE_DEP_VARS)
+```
+
+\begin{table}[!htbp] \centering 
+  \caption{Sex and Symptoms of Depression} 
+  \label{} 
+\begin{tabular}{@{\extracolsep{5pt}}lccc} 
+\\[-1.8ex]\hline 
+\hline \\[-1.8ex] 
+ & \multicolumn{3}{c}{\textit{Dependent variable:}} \\ 
+\cline{2-4} 
+\\[-1.8ex] & Felt Worthless & Felt Hopeless & Abnormal Sleep \\ 
+\\[-1.8ex] & (1) & (2) & (3)\\ 
+\hline \\[-1.8ex] 
+ male & $-$0.261$^{***}$ & $-$0.294$^{***}$ & $-$0.088$^{***}$ \\ 
+  & (0.025) & (0.022) & (0.024) \\ 
+  Constant & $-$2.113$^{***}$ & $-$1.807$^{***}$ & $-$2.192$^{***}$ \\ 
+  & (0.016) & (0.014) & (0.016) \\ 
+ \hline \\[-1.8ex] 
+\hline 
+\hline \\[-1.8ex] 
+\textit{Note:}  & \multicolumn{3}{r}{$^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01} \\ 
+\end{tabular} 
+\end{table} 
+
+## Family Income: Does Money Buy Happiness
+Family income was once of the strongest predictors of feelings of worthlessness. While the link between happiness and family income may be unclear in the literature, the analyses below that additional income seems to guard against feelings of psychological distress. One explanation, suggested by the paper "Spending Money on Others Promotes Happiness", is that wealthier familers are more able and willing to spend money on others, thus leading to greater happiness. In a representative survey of 632 Americans, the authors analyzed the relationship between income, pro-social spending, and happiness. In one regression, they found the effect of extra income was just as powerful as the effect of spending more money on others. [@dunn2008spending]
+
+The authors then followed up with an experimental design where participants were paid either \$5 or \$20 and told to either spend this money on themselves or on others. Resultantly, those who were instructed to spend the money on others were found to have been significantly happier. However, when they asked the respondants whether they thought personal or prosocial spending was better for their happiness, the majority answered with personal spending. Although this is speculative, it is possible that richer households--having accomodated their basic needs and then some--may be more inclined to spend their wealth on others, thus leading to greater psychological wellbeing.
+
+```{r "Income GLM Model", eval=FALSE}
+# Income: Poorest Group a baseline
+worthless_income.glm <- dep_glm(worthless_once ~
+  fam_income35_50k + fam_income50_75k + fam_income75_100k + fam_income101k)
+
+hopeless_income.glm <- dep_glm(hopeless_once ~ 
+  fam_income35_50k + fam_income50_75k + fam_income75_100k + fam_income101k)
+
+sleep_income.glm <- dep_glm(abnormal_sleep ~  
+  fam_income35_50k + fam_income50_75k + fam_income75_100k + fam_income101k)
+```
+
+```{r "Worthless vs. Income"}
+# By Income Level
+worthless_income.plot <- worthless_by_group("fam_income")
+
+ggplot(worthless_income.plot,
+       aes(x=time, y=value, color=fam_income, group=fam_income)) +
+  geom_line(size=1.5) +
+  scale_color_continuous(
+    name="Family Income",
+    labels=c("$0 - $34,999", "$35,000 - $49,999", "$50,000 - $74,999",
+             "$75,000 - $99,999", "$100,000 and over")) +
+  labs(title="Feelings of Worthlessness Vary by Income Bracket",
+       subtitle="Poorest Americans more likely to feel distressed",
+       x="Quarter of Interview", y="Percent of Income Bracket") + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+```{r "Income Regression Table", eval=FALSE}
+stargazer(worthless_income.glm, hopeless_income.glm, sleep_income.glm,
+  title="Association Between Income and Symptoms of Depression",
+  notes=c(REG_TABLE_NOTE.INCOME),
+  no.space = TRUE,
+  omit.table.layout = "s",
+  dep.var.labels = REG_TABLE_DEP_VARS)
+```
+
+\begin{table}[!htbp] \centering 
+  \caption{Association Between Income and Symptoms of Depression} 
+  \label{} 
+\begin{tabular}{@{\extracolsep{5pt}}lccc} 
+\\[-1.8ex]\hline 
+\hline \\[-1.8ex] 
+ & \multicolumn{3}{c}{\textit{Dependent variable:}} \\ 
+\cline{2-4} 
+\\[-1.8ex] & Felt Worthless & Felt Hopeless & Abnormal Sleep \\ 
+\\[-1.8ex] & (1) & (2) & (3)\\ 
+\hline \\[-1.8ex] 
+ fam\_income35\_50k & $-$0.482$^{***}$ & $-$0.475$^{***}$ & $-$0.276$^{***}$ \\ 
+  & (0.035) & (0.032) & (0.035) \\ 
+  fam\_income50\_75k & $-$0.744$^{***}$ & $-$0.733$^{***}$ & $-$0.444$^{***}$ \\ 
+  & (0.037) & (0.033) & (0.034) \\ 
+  fam\_income75\_100k & $-$1.133$^{***}$ & $-$1.061$^{***}$ & $-$0.619$^{***}$ \\ 
+  & (0.053) & (0.045) & (0.045) \\ 
+  fam\_income101k & $-$1.316$^{***}$ & $-$1.302$^{***}$ & $-$0.856$^{***}$ \\ 
+  & (0.046) & (0.040) & (0.041) \\ 
+  Constant & $-$1.709$^{***}$ & $-$1.421$^{***}$ & $-$1.893$^{***}$ \\ 
+  & (0.015) & (0.014) & (0.016) \\ 
+ \hline \\[-1.8ex] 
+\hline 
+\hline \\[-1.8ex] 
+\textit{Note:}  & \multicolumn{3}{r}{$^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01} \\ 
+ & \multicolumn{3}{r}{When controlling for income, the lowest income bracket was the left out group} \\ 
+\end{tabular} 
+\end{table} 
+
+## Employment Status
+One of the questions I was interested in was the relationship between employment status and depression, especially if the person had a disability. In the most recent *Current Population Reports* published by the US Census Bureau, the occurence of disability was measured via the 2008 Survey of Income and Program Participation (SIPP), conducted from May 2010 through August 2010. [@kaye] The study found that disabled workers were more likely to lose their jobs during the recession and less likely to be hired as the economy recovered.
+
+Unfortunately, to contain the length of this paper, interactions between disability and unemployment were not measured. However, regressions against employment status were ran.
+
+```{r "Disabled GLM"}
+# ## Can't Work Due to Disability
+# Here the relationship between not being able to work due to disability and depression was measured. It should be noted that this group is different from the group studied in the paper mentioned above as this group consists of those who cannot work at all due to disability.
+
+# worthless_disab.glm <- dep_glm(worthless_once ~ not_working_disabled)
+# hopeless_disab.glm <- dep_glm(hopeless_once ~ not_working_disabled)
+# sleep_disab.glm <- dep_glm(abnormal_sleep ~ not_working_disabled)
+```
+
+```{r "Disabled Regression Table"}
+# stargazer(worthless_disab.glm, hopeless_disab.glm, sleep_disab.glm,
+#           title = "Association Between Disability and Symptoms of Depression",
+#           dep.var.labels = REG_TABLE_DEP_VARS,
+#           no.space = TRUE)
+```
+
+### Looking for Work
+Those actively looking for a job were found to have a slightly higher risk of symptoms of psychological distress in preliminary estimates. For example, when regressing against feelings of hopelessness, the coefficient on looking for work was $\hat{\beta} = 0.82$. This translates to a
+$\frac{exp(-2 + 0.82)}{1 + exp(-2 + 0.82)} = 23.5\%$ chance of feeling hopeless if looking for a job, but only $11.9\%$ otherwise. Since, one study on alcohol use during the recession found that middle aged men were more likely to drink as a result of economic loss,[@mulia2014economic] I was motivated to see if there was an interaction effects between employment status, age and sex. However, the interaction coefficients were not statistically significant.
+
+```{r "Looking for Work GLM", eval=FALSE}
+worthless_job.glm <- dep_glm(worthless_once ~ looking_for_work)
+hopeless_job.glm <- dep_glm(hopeless_once ~ looking_for_work)
+sleep_job.glm <- dep_glm(abnormal_sleep ~ looking_for_work)
+
+# Interaction Effects with Age and Sex
+worthless_job.intr_glm <- dep_glm(worthless_once ~ looking_for_work*male + looking_for_work*age)
+```
+
+```{r "Looking for Work Regression Table", eval=FALSE}
+stargazer(
+  worthless_job.glm, worthless_job.intr_glm,
+  hopeless_job.glm, sleep_job.glm,
+  title = "Employment Status and Symptoms of Depression",
+  no.space = TRUE,
+  omit.table.layout = "s",
+  dep.var.labels = REG_TABLE_DEP_VARS)
+```
+
+\begin{table}[!htbp] \centering 
+  \caption{Employment Status and Symptoms of Depression} 
+  \label{} 
+\begin{tabular}{@{\extracolsep{5pt}}lcccc} 
+\\[-1.8ex]\hline 
+\hline \\[-1.8ex] 
+ & \multicolumn{4}{c}{\textit{Dependent variable:}} \\ 
+\cline{2-5} 
+\\[-1.8ex] & \multicolumn{2}{c}{Felt Worthless} & Felt Hopeless & Abnormal Sleep \\ 
+\\[-1.8ex] & (1) & (2) & (3) & (4)\\ 
+\hline \\[-1.8ex] 
+ looking\_for\_work & 0.777$^{***}$ & 0.714$^{***}$ & 0.821$^{***}$ & 0.180$^{***}$ \\ 
+  & (0.042) & (0.127) & (0.038) & (0.048) \\ 
+  male &  & $-$0.270$^{***}$ &  &  \\ 
+  &  & (0.026) &  &  \\ 
+  age &  & 0.002$^{**}$ &  &  \\ 
+  &  & (0.001) &  &  \\ 
+  looking\_for\_work:male &  & $-$0.009 &  &  \\ 
+  &  & (0.084) &  &  \\ 
+  looking\_for\_work:age &  & 0.003 &  &  \\ 
+  &  & (0.003) &  &  \\ 
+  Constant & $-$2.289$^{***}$ & $-$2.237$^{***}$ & $-$2.000$^{***}$ & $-$2.244$^{***}$ \\ 
+  & (0.013) & (0.039) & (0.011) & (0.012) \\ 
+ \hline \\[-1.8ex] 
+\hline 
+\hline \\[-1.8ex] 
+\textit{Note:}  & \multicolumn{4}{r}{$^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01} \\ 
+\end{tabular} 
+\end{table} 
+
+## Time Fixed Effects
+Survey year dummies were included to account for time fixed effects. Quarter dummies were also added to account for any potential seasonality, but none of them were statistically significant.
+
+```{r "Time and Season GLM", eval=FALSE}
+worthless_year.glm <- dep_glm(worthless_once ~ factor(srvy_yr) + factor(intv_qrt))
+hopeless_year.glm <- dep_glm(hopeless_once ~ factor(srvy_yr) + factor(intv_qrt))
+sleep_year.glm <- dep_glm(abnormal_sleep ~ factor(srvy_yr) + factor(intv_qrt))
+```
+
+```{r "Time and Season Regression Table", eval=FALSE}
+stargazer(worthless_year.glm, hopeless_year.glm, sleep_year.glm,
+  title="Time Fixed Effects and Seasonality",
+  no.space = TRUE,
+  omit.table.layout = "s",
+  dep.var.labels = REG_TABLE_DEP_VARS)
+```
+
+\begin{table}[!htbp] \centering 
+  \caption{Time Fixed Effects and Seasonality} 
+  \label{} 
+\begin{tabular}{@{\extracolsep{5pt}}lccc} 
+\\[-1.8ex]\hline 
+\hline \\[-1.8ex] 
+ & \multicolumn{3}{c}{\textit{Dependent variable:}} \\ 
+\cline{2-4} 
+\\[-1.8ex] & Felt Worthless & Felt Hopeless & Abnormal Sleep \\ 
+\\[-1.8ex] & (1) & (2) & (3)\\ 
+\hline \\[-1.8ex] 
+ factor(srvy\_yr)2008 & 0.107$^{**}$ & 0.152$^{***}$ & 0.038 \\ 
+  & (0.048) & (0.042) & (0.047) \\ 
+  factor(srvy\_yr)2009 & 0.105$^{**}$ & 0.138$^{***}$ & 0.057 \\ 
+  & (0.046) & (0.041) & (0.046) \\ 
+  factor(srvy\_yr)2011 & 0.060 & 0.109$^{***}$ & 0.123$^{***}$ \\ 
+  & (0.043) & (0.039) & (0.043) \\ 
+  factor(srvy\_yr)2012 & 0.035 & 0.062 & 0.097$^{**}$ \\ 
+  & (0.044) & (0.040) & (0.043) \\ 
+  factor(srvy\_yr)2013 & 0.165$^{***}$ & 0.252$^{***}$ & 0.137$^{***}$ \\ 
+  & (0.043) & (0.039) & (0.043) \\ 
+  factor(intv\_qrt)2 & $-$0.048 & $-$0.063$^{**}$ & 0.051 \\ 
+  & (0.034) & (0.030) & (0.034) \\ 
+  factor(intv\_qrt)3 & $-$0.018 & $-$0.010 & 0.038 \\ 
+  & (0.035) & (0.031) & (0.036) \\ 
+  factor(intv\_qrt)4 & $-$0.051 & $-$0.026 & 0.045 \\ 
+  & (0.035) & (0.031) & (0.035) \\ 
+  Constant & $-$2.285$^{***}$ & $-$2.039$^{***}$ & $-$2.345$^{***}$ \\ 
+  & (0.040) & (0.036) & (0.040) \\ 
+ \hline \\[-1.8ex] 
+\hline 
+\hline \\[-1.8ex] 
+\textit{Note:}  & \multicolumn{3}{r}{$^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01} \\ 
+\end{tabular} 
+\end{table} 
+
+## Language Spoken
+I was interested in if there was a relationship between one's primary language and their risk factor for mental distress. Because English is the de facto language of the United States, those who cannot speak English may feel "left out." The language the NHIS interview was conducted in was used as a proxy for the individual's main language. Initially, no such association existed but there appears to be a spike every four years, occuring roughly during and right after the election. This may be a result of the extensive rhetoric and debate around elections, especially concerning immigration.
+
+```{r "Language Spoken"}
+worthless_english.plot <- worthless_by_group("english")
+
+ggplot(worthless_english.plot,
+       aes(x=time, y=value, color=english, group=english)) +
+  geom_line(size=1.5) +
+  scale_color_continuous("Primary Language",
+                         breaks=c(1, 0),
+                         labels=c("English", "Not English")) +
+  labs(
+    title="Primary Language vs. Feelings of Worthlessness",
+    x="Quarter of Interview", y="Percent of Respondents") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+```{r "Language GLM", eval=FALSE}
+# English as Interview Language
+worthless_lang.glm <- dep_glm(worthless_once ~ english)
+hopeless_lang.glm <- dep_glm(hopeless_once ~ english)
+sleep_lang.glm <- dep_glm(abnormal_sleep ~ english)
+
+# Interaction Effect with Year
+worthless_lang.intr_glm <- dep_glm(worthless_once ~ english + english*factor(srvy_yr))
+```
+
+```{r "Language Regression Tables", eval=FALSE}
+stargazer(worthless_lang.glm, worthless_lang.intr_glm,
+  hopeless_lang.glm, sleep_lang.glm,
+  title="Language Spoken and Symptoms of Depression",
+  no.space = TRUE,
+  omit.table.layout = "s",
+  dep.var.labels = REG_TABLE_DEP_VARS)
+```
+
+\begin{table}[!htbp] \centering 
+  \caption{Language Spoken and Symptoms of Depression} 
+  \label{} 
+\begin{tabular}{@{\extracolsep{5pt}}lcccc} 
+\\[-1.8ex]\hline 
+\hline \\[-1.8ex] 
+ & \multicolumn{4}{c}{\textit{Dependent variable:}} \\ 
+\cline{2-5} 
+\\[-1.8ex] & \multicolumn{2}{c}{Felt Worthless} & Felt Hopeless & Abnormal Sleep \\ 
+\\[-1.8ex] & (1) & (2) & (3) & (4)\\ 
+\hline \\[-1.8ex] 
+ english & $-$0.289$^{***}$ & $-$0.019 & $-$0.551$^{***}$ & 0.277$^{***}$ \\ 
+  & (0.041) & (0.116) & (0.034) & (0.048) \\ 
+  factor(srvy\_yr)2008 &  & 0.448$^{***}$ &  &  \\ 
+  &  & (0.160) &  &  \\ 
+  factor(srvy\_yr)2009 &  & 0.273$^{*}$ &  &  \\ 
+  &  & (0.149) &  &  \\ 
+  factor(srvy\_yr)2011 &  & 0.297$^{**}$ &  &  \\ 
+  &  & (0.136) &  &  \\ 
+  factor(srvy\_yr)2012 &  & 0.366$^{***}$ &  &  \\ 
+  &  & (0.142) &  &  \\ 
+  factor(srvy\_yr)2013 &  & 0.517$^{***}$ &  &  \\ 
+  &  & (0.138) &  &  \\ 
+  english:factor(srvy\_yr)2008 &  & $-$0.365$^{**}$ &  &  \\ 
+  &  & (0.167) &  &  \\ 
+  english:factor(srvy\_yr)2009 &  & $-$0.179 &  &  \\ 
+  &  & (0.157) &  &  \\ 
+  english:factor(srvy\_yr)2011 &  & $-$0.254$^{*}$ &  &  \\ 
+  &  & (0.144) &  &  \\ 
+  english:factor(srvy\_yr)2012 &  & $-$0.357$^{**}$ &  &  \\ 
+  &  & (0.149) &  &  \\ 
+  english:factor(srvy\_yr)2013 &  & $-$0.379$^{***}$ &  &  \\ 
+  &  & (0.146) &  &  \\ 
+  Constant & $-$1.963$^{***}$ & $-$2.296$^{***}$ & $-$1.430$^{***}$ & $-$2.495$^{***}$ \\ 
+  & (0.039) & (0.110) & (0.032) & (0.046) \\ 
+ \hline \\[-1.8ex] 
+\hline 
+\hline \\[-1.8ex] 
+\textit{Note:}  & \multicolumn{4}{r}{$^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01} \\ 
+\end{tabular} 
+\end{table} 
+
+## Marriage
+With the talk of high divorce rates, many people may be hesitant to marry. However, a univariate regression reveals a strong negative association between being married and feelings of worthlessness.
+The coefficient on marriage of $\hat{\beta} = -0.51$ translates to a
+$\frac{exp(-1.99095)}{(1 + exp(-1.99095)} = 12\%$ chance of feeling worthless for unmarried individuals 
+but only a 
+$\frac{exp(-1.99095 -0.50677)}{(1 + exp(-1.99095 -0.50677))} = 7.6\%$ chance of feeling worthless for 
+married individuals--a difference of 4.4\%. Based on feelings of worthlessness, compared to the regressions against family income, being married has roughly the same protective effect as jumping two income brackets. Similar results were found for the other two response variables. In the final model, after controlling for other demographic variables, the protective impact of marriage was diminished but still strong and statistically significant.
+
+I was also curious to see if any sex benefitted more from marriage than the other, at least in terms of mental health. However, in the regression against feelings of worthlessnesss, the interaction term was trivial and not statistically significant.
+
+```{r "Marriage GLM", eval=FALSE}
+worthless_marriage.glm <- svyglm(formula = worthless_once ~ married,
+                             design = dep_design,
+                             family = binomial(link = "logit"), 
+                             method = "glm.fit")
+
+# Do males or females enjoy marriages more
+worthless_marriage.intr_glm <- svyglm(formula = worthless_once ~ married + married*male,
+                             design = dep_design,
+                             family = binomial(link = "logit"), 
+                             method = "glm.fit")
+
+
+hopeless_marriage.glm <- svyglm(formula = hopeless_once ~ married,
+                             design = dep_design,
+                             family = binomial(link = "logit"), 
+                             method = "glm.fit")
+
+sleep_marriage.glm <- svyglm(formula = abnormal_sleep ~ married,
+                             design = dep_design,
+                             family = binomial(link = "logit"), 
+                             method = "glm.fit")
+```
+
+```{r "Marriage Regression Tables", eval=FALSE}
+stargazer(worthless_marriage.glm, worthless_marriage.intr_glm,
+  hopeless_marriage.glm, sleep_marriage.glm,
+  title="Relationship Between Marriage and Symptoms of Depression",
+  no.space = TRUE,
+  omit.table.layout = "s",
+  dep.var.labels = REG_TABLE_DEP_VARS)
+```
+
+\begin{table}[!htbp] \centering 
+  \caption{Relationship Between Marriage and Symptoms of Depression} 
+  \label{} 
+\begin{tabular}{@{\extracolsep{5pt}}lcccc} 
+\\[-1.8ex]\hline 
+\hline \\[-1.8ex] 
+ & \multicolumn{4}{c}{\textit{Dependent variable:}} \\ 
+\cline{2-5} 
+\\[-1.8ex] & \multicolumn{2}{c}{Felt Worthless} & Felt Hopeless & Abnormal Sleep \\ 
+\\[-1.8ex] & (1) & (2) & (3) & (4)\\ 
+\hline \\[-1.8ex] 
+ married & $-$0.507$^{***}$ & $-$0.493$^{***}$ & $-$0.530$^{***}$ & $-$0.371$^{***}$ \\ 
+  & (0.025) & (0.033) & (0.022) & (0.024) \\ 
+  male &  & $-$0.236$^{***}$ &  &  \\ 
+  &  & (0.032) &  &  \\ 
+  married:male &  & $-$0.008 &  &  \\ 
+  &  & (0.051) &  &  \\ 
+  Constant & $-$1.991$^{***}$ & $-$1.887$^{***}$ & $-$1.687$^{***}$ & $-$2.051$^{***}$ \\ 
+  & (0.015) & (0.019) & (0.014) & (0.015) \\ 
+ \hline \\[-1.8ex] 
+\hline 
+\hline \\[-1.8ex] 
+\textit{Note:}  & \multicolumn{4}{r}{$^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01} \\ 
+\end{tabular} 
+\end{table} 
+
+## Neck and Back Pain
+One study of chronic back pain in the Canadian Community Health Survey--with a sample size of over 100,000--found that those with chronic bank pain were at high risk for developing major depression. [@currie2004chronic] Furthermore, they also tested for the sigificance of the interaction between back pain, age, and gender--with only the gender interaction being statistically significant.
+
+Unlike the aforementioned study, severity of neck or back pain could not be considered as--in the National Health Interview Survey--they were simply coded as "Yes" or "No" if the person being interviewed suffered either in the last three months. However, the regressions below obtained similar results, with the coefficients obtained being the greatest in magnitude in this study (aside from those on income). For example, in the single regression of back pain against feelings of worthlessness, the fitted coefficient was $\hat{\beta} = 1.09$ with an intercept of $-2.64$. This translates to a probability of $17.3\%$ of feeling worthless for those who had back pain compared to a just $6.6\%$ for those without.
+
+Furthermore, I also found statistically significant mixed results between the interaction effects
+and the three response variables. For example, back pain was more likely to hinder sleep for older males. Likewise, males with back pain were also more likely to experience feelings of worthlessness than others afflicted.
+
+```{r "Neck and Back Pain GLM", eval=FALSE}
+# Neck Pain
+worthless_neck.glm <- dep_glm(worthless_once ~ neck_pain)
+hopeless_neck.glm <- dep_glm(worthless_once ~ neck_pain)
+sleep_neck.glm <- dep_glm(abnormal_sleep ~ neck_pain)
+
+# Back Pain
+worthless_back.glm <- dep_glm(worthless_once ~ back_pain)
+hopeless_back.glm <- dep_glm(worthless_once ~ neck_pain)
+sleep_back.glm <- dep_glm(abnormal_sleep ~ neck_pain)
+
+# Interaction Effects
+worthless_pain.intr_glm <- dep_glm(
+  worthless_once ~ neck_pain*back_pain + neck_pain*male + back_pain*male
+  + neck_pain*age + back_pain*age)
+
+hopeless_pain.intr_glm <- dep_glm(
+  hopeless_once ~ neck_pain*back_pain + neck_pain*male + back_pain*male
+  + neck_pain*age + back_pain*age)
+
+sleep_pain.intr_glm <- dep_glm(
+  abnormal_sleep ~ neck_pain*back_pain + neck_pain*male + back_pain*male
+  + neck_pain*age + back_pain*age)
+```
+
+```{r "Pain Regression Table", eval=FALSE}
+stargazer(worthless_neck.glm, hopeless_neck.glm, sleep_neck.glm,
+          worthless_back.glm, hopeless_back.glm, sleep_back.glm,
+          dep.var.labels=REG_TABLE_DEP_VARS,
+          title="Association Between Neck and Back Pain and Symptoms of Depression",
+          no.space=TRUE)
+
+stargazer(worthless_pain.intr_glm, hopeless_pain.intr_glm, sleep_pain.intr_glm,
+          dep.var.labels=REG_TABLE_DEP_VARS,
+          title="Neck and Back Pain Interaction Effects",
+          no.space=TRUE)
+```
+
+\begin{table}[!htbp] \centering 
+  \caption{Association Between Neck and Back Pain and Symptoms of Depression} 
+  \label{} 
+\begin{tabular}{@{\extracolsep{5pt}}lcccccc} 
+\\[-1.8ex]\hline 
+\hline \\[-1.8ex] 
+ & \multicolumn{6}{c}{\textit{Dependent variable:}} \\ 
+\cline{2-7} 
+\\[-1.8ex] & \multicolumn{2}{c}{Felt Worthless} & Felt Hopeless & \multicolumn{2}{c}{Abnormal Sleep} & abnormal\_sleep \\ 
+\\[-1.8ex] & (1) & (2) & (3) & (4) & (5) & (6)\\ 
+\hline \\[-1.8ex] 
+ neck\_pain & 1.124$^{***}$ & 1.124$^{***}$ & 0.832$^{***}$ &  & 1.124$^{***}$ & 0.832$^{***}$ \\ 
+  & (0.027) & (0.027) & (0.028) &  & (0.027) & (0.028) \\ 
+  back\_pain &  &  &  & 1.087$^{***}$ &  &  \\ 
+  &  &  &  & (0.025) &  &  \\ 
+  Constant & $-$2.471$^{***}$ & $-$2.471$^{***}$ & $-$2.395$^{***}$ & $-$2.643$^{***}$ & $-$2.471$^{***}$ & $-$2.395$^{***}$ \\ 
+  & (0.015) & (0.015) & (0.014) & (0.017) & (0.015) & (0.014) \\ 
+ \hline \\[-1.8ex] 
+Observations & 127,274 & 127,274 & 127,274 & 127,274 & 127,274 & 127,274 \\ 
+Log Likelihood & $-$38,584.490 & $-$38,584.490 & $-$39,059.990 & $-$38,282.010 & $-$38,584.490 & $-$39,059.990 \\ 
+Akaike Inf. Crit. & 77,172.980 & 77,172.980 & 78,123.990 & 76,568.010 & 77,172.980 & 78,123.990 \\ 
+\hline 
+\hline \\[-1.8ex] 
+\textit{Note:}  & \multicolumn{6}{r}{$^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01} \\ 
+\end{tabular} 
+\end{table} 
+
+\begin{table}[!htbp] \centering 
+  \caption{Neck and Back Pain Interaction Effects} 
+  \label{} 
+\begin{tabular}{@{\extracolsep{5pt}}lccc} 
+\\[-1.8ex]\hline 
+\hline \\[-1.8ex] 
+ & \multicolumn{3}{c}{\textit{Dependent variable:}} \\ 
+\cline{2-4} 
+\\[-1.8ex] & Felt Worthless & Felt Hopeless & Abnormal Sleep \\ 
+\\[-1.8ex] & (1) & (2) & (3)\\ 
+\hline \\[-1.8ex] 
+ neck\_pain & 0.726$^{***}$ & 0.670$^{***}$ & 0.621$^{***}$ \\ 
+  & (0.102) & (0.093) & (0.109) \\ 
+  back\_pain & 0.883$^{***}$ & 0.876$^{***}$ & 0.958$^{***}$ \\ 
+  & (0.085) & (0.076) & (0.083) \\ 
+  male & $-$0.160$^{***}$ & $-$0.229$^{***}$ & 0.026 \\ 
+  & (0.036) & (0.031) & (0.033) \\ 
+  age & $-$0.004$^{***}$ & $-$0.007$^{***}$ & 0.005$^{***}$ \\ 
+  & (0.001) & (0.001) & (0.001) \\ 
+  neck\_pain:back\_pain & $-$0.093 & $-$0.094$^{*}$ & 0.058 \\ 
+  & (0.063) & (0.057) & (0.066) \\ 
+  neck\_pain:male & 0.091 & 0.044 & 0.084 \\ 
+  & (0.060) & (0.055) & (0.062) \\ 
+  back\_pain:male & $-$0.127$^{**}$ & $-$0.042 & $-$0.178$^{***}$ \\ 
+  & (0.055) & (0.049) & (0.054) \\ 
+  neck\_pain:age & 0.0003 & 0.002 & $-$0.004$^{**}$ \\ 
+  & (0.002) & (0.002) & (0.002) \\ 
+  back\_pain:age & 0.001 & $-$0.0003 & $-$0.005$^{***}$ \\ 
+  & (0.002) & (0.001) & (0.001) \\ 
+  Constant & $-$2.440$^{***}$ & $-$1.975$^{***}$ & $-$2.827$^{***}$ \\ 
+  & (0.054) & (0.044) & (0.049) \\ 
+ \hline \\[-1.8ex] 
+Observations & 127,274 & 127,274 & 127,274 \\ 
+Log Likelihood & $-$37,761.520 & $-$44,797.990 & $-$38,557.190 \\ 
+Akaike Inf. Crit. & 75,543.040 & 89,615.990 & 77,134.380 \\ 
+\hline 
+\hline \\[-1.8ex] 
+\textit{Note:}  & \multicolumn{3}{r}{$^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01} \\ 
+\end{tabular} 
+\end{table} 
+
+## Alcohol Use
+Alcohol use is commonly linked with depression (why). It is also doubly important to this paper since the time frame of our data includes the recession. Intuitively, we can imagine (or have seen) some turn to the bottle as a result of losing a job or even worse, a home.Economic loss and alcohol consumption and problems during the 2008 to 2009 US recession. In one paper, found evidence that severe economic losses were associated with increased alcohol consumption and its associated consequences. [@mulia2014economic]
+
+### Frequency and Prevalence of Drinking
+The vast majority of survey respondants resported that they have had at least 12 drinks in a single year. 
+
+```{r "Calculate Drinking Frequency"}
+# Get data of people who have had 12+ drinks in one year + one life
+drinks12_year <- dep %>%
+  group_by(alc1yr) %>%
+  count(wt=weight_sa)
+
+drinks12_life <- dep %>%
+  group_by(alclife) %>%
+  count(wt=weight_sa)
+
+# Ever had more than 12+ drinks in one year
+drinks12.responses <- c(
+  "Yes", "No, but have in lifetime",
+  "No, not even in lifetime", "Refuse to answer")
+
+drinks12 <- data.frame(
+  responses=factor(drinks12.responses, levels=drinks12.responses),
+  counts=c(as.numeric(drinks12_year %>% filter(alc1yr == "1") %>% select(n)),
+           as.numeric(drinks12_life %>% filter(alclife == "1") %>% select(n)),
+           as.numeric(drinks12_life %>% filter(alclife == "2") %>% select(n)),
+           as.numeric(drinks12_life %>% filter(alclife >= 7) %>% summarise(n=sum(n)))
+  )
+)
+```
+
+```{r "Drinking Frequency Plot"}
+ggplot(drinks12, aes(x=responses, y=counts)) + geom_bar(stat='identity') +
+  labs(title="Have you ever had more than 12+ drinks in one year",
+       caption="National Health Interview Survey 2007-2013: Sample Adult File",
+       x="", y="") +
+  coord_flip()
+```
+
+However, the distribution of drinking is skewed. with most respondants report drinking less than once a week or not at all.
+
+```{r}
+# # Histogram of ALC12MNO
+# ggplot(dep %>%
+#          filter(alc12mno <= 365 & !is.na(alc12mno)) %>%
+#          mutate(alc12mno = as.numeric(alc12mno)),
+#          aes(x=alc12mno)) + geom_histogram(stat="count") + 
+#   ggtitle("In the past year, how often did you drink any type of alcoholic beverage") +
+#   xlab("Days in Year")
+  
+# Histogram of ALC12MWK
+# ggplot(dep %>%
+#          filter(alc12mwk <= 95 & !is.na(alc12mwk)) %>%
+#          mutate(alc12mwk = as.numeric(alc12mwk)),
+#          aes(x=alc12mwk)) + geom_histogram(stat="count") +
+#   ggtitle("In the past year, how often did you drink any type of alcoholic beverage") +
+#   xlab("Days per Week")
+```
+
+### Drinking and the Recession
+On average, Americans drank more during the recession, but the plot below also suggests that this 
+may be driven by just a small fraction of people.
+
+```{r "Alcohol Use Data"}
+# Note: Add weighted median later
+avg_by_yr <- dep %>%
+  group_by(srvy_yr, intv_qrt) %>%
+  
+  # Only count people who had at least ONE drink
+  filter(alc12mno2 > 0) %>%
+  summarise(alc=weighted.mean(alc12mno2, wt=weight_sa)) %>%
+  mutate(time=paste0(srvy_yr, "-", intv_qrt)) %>%
+  ungroup() %>%
+  select(time, alc)
+
+avg_by_yr.ts <- ts(c(avg_by_yr$alc[1:12], NA, NA, NA, NA, avg_by_yr$alc[13:24]),
+                   start=c(2007, 1), end=c(2013, 4), freq=4)
+
+avg_by_yr.tslm <- tslm(avg_by_yr.ts ~ trend)
+avg_by_yr.ar1 <- auto.arima(avg_by_yr.ts, d=0, D=0, max.p=1)
+
+# plot(avg_by_yr.ts)
+# lines(fitted(avg_by_yr.ar1))
+```
+
+```{r "Alcohol Use vs Recession - Plots"}
+ggplot(avg_by_yr, aes(x=time)) +
+  geom_point(aes(y=alc)) +
+  # geom_line(aes(y=fitted(avg_by_yr.tslm))) +
+  labs(
+    title="Alcohol Consumption Increases During the Recession",
+    subtitle="Weighted average of those who drank at least once a year",
+    x="Quarter",
+    y="Days per Year Spent Drinking") +
+  
+  # Flip x-axis labels
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+```{r "Alcohol Use By Race"}
+# alc_by_race <- collect(tbl(nhis_db, sql("
+#   SELECT DISTINCT
+#     race_name, alc12mwk2, group_total, group_total/race_total as race_pct,
+#     race_total
+#   FROM
+#     (SELECT race_name, alc12mwk2,
+#       sum(weight_sa) OVER (PARTITION BY race_name, alc12mwk2) as group_total,
+#       sum(weight_sa) OVER (PARTITION BY race_name) as race_total
+#       FROM depression_all) as harambe
+#   ORDER BY
+#     race_name, alc12mwk2
+#   ")))
+# 
+# write.csv(alc_by_race, 'alc_by_race.csv')
+
+alc_by_race <- read.csv('alc_by_race.csv', header=TRUE)
+
+# Don't do plot --> Not that interesting
+
+# alc_by_race.pct <- reshape(
+#   as.data.frame(alc_by_race %>% select(race_name, alc12mwk2, race_pct)),
+#   idvar="race_name",
+#   timevar="alc12mwk2",
+#   times=c(0, 1, 2, 3, 4, 5, 6, 7),
+#   direction="wide")
+# 
+# pander(alc_by_race.pct)
+```
+
+```{r "Alcohol Use By Income Group", fig.height=4.5}
+# alc_by_incgrp <- collect(tbl(nhis_db, sql("
+#   SELECT DISTINCT
+#     fam_income, fam_income_name, alc12mwk2, group_total,
+#     group_total/incgrp_total as incgrp_pct,
+#     incgrp_total
+#   FROM
+#     (SELECT fam_income, fam_income_name, alc12mwk2,
+#       sum(weight_sa) OVER (PARTITION BY fam_income_name, alc12mwk2) as group_total,
+#       sum(weight_sa) OVER (PARTITION BY fam_income_name) as incgrp_total
+#       FROM depression_all) as harambe
+#   ORDER BY
+#     fam_income, alc12mwk2
+#   ")))
+# 
+# write.csv(alc_by_incgrp, 'alc_by_incgrp.csv')
+
+alc_by_incgrp <- read.csv('alc_by_incgrp.csv', header=TRUE)
+
+# Need to add group argument so ggplot knows what it's dodging
+ggplot(alc_by_incgrp, mapping=aes(x=alc12mwk2, group=fam_income)) +
+  geom_bar(mapping=aes(y=incgrp_pct, fill=fam_income), position='dodge', stat='identity') +
+  scale_fill_continuous(
+    name="Family Income",
+    labels=c("$0 - $34,999", "$35,000 - $49,999", "$50,000 - $74,999",
+             "$75,000 - $99,999", "$100,000 and over")) +
+  labs(title="Alcohol Use Varies by Income",
+       subtitle="Wealthier are heavier drinkers",
+       x="Days of Week Spent Drinking",
+       y="Percent of Respondants (within income group)",
+       caption="National Health Interview Survey 2007-2013: Sample Adult File")
+```
+
+### A Surprising Finding
+Surprisingly, the group at highest risk for mental distress were those who either did not drink at all or drank--on average--less than once a week.
+The heaviest drinkers (those who drank all days of the week) were the seccond highest risk group.
+It was found that a polynomial relationship between alcohol consumption (days per week spent drinking) and mental distress was more accurate than a linear one. While the figure above suggests that this may simply due to poorer Americans not being able to afford alcohol, the regression in the final model still found a significant curvilinear relationship after controlling for demographic variables (although the magnitude of the coefficients was reduced).
+
+```{r "Logistic Regression: Worthlessness", eval=TRUE}
+# Block needs to be evaluated for graph of fitted alcohol values
+worthless_alc.glm <- svyglm(worthless_once ~ alc12mwk2,
+                             design=dep_design,
+                             family=binomial(link='logit'),
+                             method="glm.fit")
+
+# Note: Using poly() means trickier to interpret estimates
+# https://stackoverflow.com/questions/21737687/polynomial-data-and-rs-glm
+worthless_alc.poly_glm <- svyglm(worthless_once ~ alc12mwk2 + I(alc12mwk2^2),
+                             design=dep_design,
+                             family=binomial(link='logit'),
+                             method="glm.fit")
+```
+
+```{r "Logistic Regression: Hopelessness", eval=FALSE}
+hopeless_alc.glm <- dep_glm(hopeless_once ~ alc12mwk2)
+
+hopeless_alc.poly_glm <- svyglm(hopeless_once ~ alc12mwk2 + I(alc12mwk2^2),
+                             design=dep_design,
+                             family=binomial(link='logit'),
+                             method="glm.fit")
+
+sleep_alc.glm <- svyglm(abnormal_sleep ~ alc12mwk2,
+                             design=dep_design,
+                             family=binomial(link='logit'),
+                             method="glm.fit")
+
+sleep_alc.poly_glm <- svyglm(abnormal_sleep ~ alc12mwk2 + I(alc12mwk2^2),
+                             design=dep_design,
+                             family=binomial(link='logit'),
+                             method="glm.fit")
+```
+
+```{r "Alcohol Regression Tables", eval=FALSE}
+stargazer(worthless_alc.glm, worthless_alc.poly_glm,
+          hopeless_alc.glm, hopeless_alc.poly_glm,
+          sleep_alc.glm, sleep_alc.poly_glm,
+          title = "Effect of Alcohol on Symptoms of Depression",
+          dep.var.labels = REG_TABLE_DEP_VARS,
+          covariate.labels =
+            c("Days/Week Drinking",
+              "(Days/Week Drinking)^2"))
+```
+
+\begin{table}[!htbp] \centering 
+  \caption{Effect of Alcohol on Symptoms of Depression} 
+  \label{} 
+\begin{tabular}{@{\extracolsep{5pt}}lcccccc} 
+\\[-1.8ex]\hline 
+\hline \\[-1.8ex] 
+ & \multicolumn{6}{c}{\textit{Dependent variable:}} \\ 
+\cline{2-7} 
+\\[-1.8ex] & \multicolumn{2}{c}{Felt Worthless} & \multicolumn{2}{c}{Felt Hopeless} & \multicolumn{2}{c}{Abnormal Amount of Sleep} \\ 
+\\[-1.8ex] & (1) & (2) & (3) & (4) & (5) & (6)\\ 
+\hline \\[-1.8ex] 
+ Days/Week Drinking & $-$0.046$^{***}$ & $-$0.260$^{***}$ & $-$0.056$^{***}$ & $-$0.225$^{***}$ & $-$0.071$^{***}$ & $-$0.275$^{***}$ \\ 
+  & (0.008) & (0.023) & (0.007) & (0.020) & (0.008) & (0.024) \\ 
+  & & & & & & \\ 
+ $(\text{Days/Week Drinking})^2$ &  & 0.036$^{***}$ &  & 0.029$^{***}$ &  & 0.035$^{***}$ \\ 
+  &  & (0.004) &  & (0.003) &  & (0.004) \\ 
+  & & & & & & \\ 
+ Constant & $-$2.185$^{***}$ & $-$2.139$^{***}$ & $-$1.885$^{***}$ & $-$1.848$^{***}$ & $-$2.183$^{***}$ & $-$2.140$^{***}$ \\ 
+  & (0.014) & (0.014) & (0.012) & (0.012) & (0.013) & (0.014) \\ 
+  & & & & & & \\ 
+\hline \\[-1.8ex] 
+Observations & 127,509 & 127,509 & 127,509 & 127,509 & 127,509 & 127,509 \\ 
+Log Likelihood & $-$40,058.720 & $-$39,967.950 & $-$47,479.880 & $-$47,410.740 & $-$39,408.460 & $-$39,335.030 \\ 
+Akaike Inf. Crit. & 80,121.440 & 79,941.900 & 94,963.760 & 94,827.470 & 78,820.920 & 78,676.050 \\ 
+\hline 
+\hline \\[-1.8ex] 
+\textit{Note:}  & \multicolumn{6}{r}{$^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01} \\ 
+\end{tabular} 
+\end{table} 
+
+```{r "Worthlessness vs. Drinking: Observed and Fitted Values", fig.height=4.5}
+# Calculate weighted average from data
+worthless_alc.avg <- dep %>%
+  mutate(alc12mwk2 = as.numeric(alc12mwk2)) %>%
+  group_by(alc12mwk2) %>%
+  summarise(worthls_avg = weighted.mean(worthless_once, wt=weight_sa))
+
+# Get fitted model predictions
+worthless_alc.avg[, "pred_linear"] <- predict.glm(
+  object=worthless_alc.glm, newdata=worthless_alc.avg, type=c("response"))
+worthless_alc.avg[, "pred_poly"] <- predict.glm(
+  object=worthless_alc.poly_glm, newdata=worthless_alc.avg, type=c("response"))
+
+ggplot(worthless_alc.avg, aes(x=alc12mwk2)) +
+  geom_point(aes(y=worthls_avg, color="Observed")) +
+  geom_line(aes(y=pred_linear, color="Linear"), size=1) +
+  geom_line(aes(y=pred_poly, color="Polynomial"), size=1) +
+  labs(title="Feelings of Worthlessness vs. Drinking",
+       subtitle="Observed weighted averages vs. fitted logistic regression models",
+       caption="National Health Interview Survey 2007-2013: Sample Adult File",
+       x="Days Per Week Spent Drinking",
+       y="Probability of Feeling Worthless") +
+  scale_colour_manual("Fitted Model", 
+                    breaks = c("Observed", "Linear", "Polynomial"),
+                    values = c("Observed"="black",
+                               "Linear"="#ef8a62",
+                               "Polynomial"="#67a9cf"))
+```

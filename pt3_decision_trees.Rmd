@@ -1,0 +1,339 @@
+---
+title: "Decision Trees"
+author: "Vincent La"
+date: "May 30, 2017"
+output: pdf_document
+bibliography: bibliography.bibtex
+---
+
+```{r include=FALSE, eval=FALSE}
+# Only run this chunk if knitting this document by itself
+source('functions.R')
+source('data.R')
+source('roc_plot.R')
+```
+
+```{r "Logistic Regression Model"}
+worthless_multi.glm <- dep_glm(
+  worthless_once ~ age + black + asian + hispanic + other_race
+  + fam_income35_50k + fam_income50_75k + fam_income75_100k + fam_income101k
+  + looking_for_work + married + male 
+  + english + english*factor(srvy_yr)
+  + neck_pain + back_pain + back_pain*male
+  + alc12mwk2 + I(alc12mwk2^2)
+  + family_size
+  + factor(srvy_yr))
+```
+
+# Decision Trees and Random Forests
+Alongside logistic regression, I also decided to fit decision trees to my data. While the logic of decision trees is different from that of logistic regression, they have nice properties which make them an attractive model for detecting symptoms of depression. Like logistic regression, they are readily interpretable--a useful quality especially when it comes to explaining illnesses. Furthermore, the branching structure of decision trees at first glance appears to be a decent approximation to how mental illness operates. Each node gives new probabilities of having a symptom of mental distress as a function of that node and its parent node.
+
+Random forests are an extension of decision trees. Because decision trees can vary randomly in what nodes appear, random forests attempt to reduce this variance by training a large number of random forests and then choosing an answer based on a majority vote.
+
+## Research Questions
+
+In particular, I had some questions about how decisions would fit the data compared to logistic regression.
+
+1. What is the effect of class imbanace? How can it be handled?
+1. How sensitive are decision trees to sampling method?
+
+## Class Imbalance and Downsampling
+
+For decision trees, I focused my research mainly on feelings of worthlessness--which only 10.5\% of the sample reported having at any time. As a result, both decision trees and random forests simply classified every individual as not having any symptoms of depression. This was unsuprisingly as a "model" which blindly classifies every individual as being perfectly fine would have a 89.5\% accuracy rate. Likewise, the observation that random forests were no different than individual decision trees is unsurprising. If a single decision tree is highly likely to classify every observation as "not depressed," then so would a multitude of them.
+
+To deal with this issue, I performed downsampling on my original training set. Specifically, I created a new training set composed with all elements of the minority class (all individuals who reported feeling "worthless") and randomly sampled an equally numerous set of observations from the majority class. As a result, in the new training set, there were equal numbers of both classes.
+
+```{r}
+nrow.minority <- nrow(dep %>% filter(worthless_once == 1 & test == 0))
+nrow.majority <- nrow(dep %>% filter(worthless_once == 0 & test == 0))
+
+# ==== Training Set 1 ====
+set.seed(420)
+
+# Ids of majority class to be used
+sample.majority <- sample(x=1:nrow.majority, size=nrow.minority)
+
+# ==== Training Set 2 ====
+set.seed(1)
+
+# Ids of majority class to be used
+sample.majority2 <- sample(x=1:nrow.majority, size=nrow.minority)
+
+# Only training set
+dep_tree <- rbind(
+  dep %>% filter(worthless_once == 1 & test == 0),
+  (dep %>% filter(worthless_once == 0 & test == 0))[sample.majority, ]
+)
+
+dep_tree2 <- rbind(
+  dep %>% filter(worthless_once == 1 & test == 0),
+  (dep %>% filter(worthless_once == 0 & test == 0))[sample.majority2, ]
+)
+```
+
+## Decision Tree Training
+To answer my research questions, I trained four decision trees. Two pairs of these decision trees were trained with the same minimum deviance parameter: either 0.001 or 0.0005. With each pair, I trained either tree with one of two training sets. Both training sets were created using the same downsampling procedure, but with a differnet random seed. This was done to test the trees' sensitivity to different training data.
+
+As we can see, there is some deviation between the pairs of decision trees created by the different training sets. Lastly, I also trained a random forest with 100 trees using the same predictors as for the decision trees above. The results of the classification metrics comparing decision trees, random forests, and logistic regression can be found below.
+
+### Decision Tree 1: Training Set 1 -- Mindev 0.001
+```{r fig.height=9}
+worthless.tree <- tree(factor(ifelse(worthless_once == 1, yes="Yes", no="No")) ~
+       age + looking_for_work + race + fam_income + married + male + neck_pain + back_pain
+  + alc12mwk2 + factor(srvy_yr) + family_size,
+  control=tree.control(nobs=nrow(dep_tree), mincut=1, minsize=2, mindev=0.001),
+  data=dep_tree)
+
+worthless.tree2 <- tree(factor(ifelse(worthless_once == 1, yes="Yes", no="No")) ~
+       age + looking_for_work + race + fam_income + married + male + neck_pain + back_pain
+  + alc12mwk2 + factor(srvy_yr) + family_size,
+  control=tree.control(nobs=nrow(dep_tree), mincut=1, minsize=2, mindev=0.0005),
+  data=dep_tree)
+
+plot(worthless.tree)
+text(worthless.tree)
+```
+
+### Decision Tree 2: Training Set 1 -- Mindev 0.0005
+```{r fig.height=9}
+plot(worthless.tree2)
+text(worthless.tree2)
+```
+
+### Decision Tree 3: Training Set 2 -- Mindev 0.001
+Although this tree was grown with the same parameters as Decision Tree 1, and its training set was sampled using the same sampling method, the seed used was different. The different configuration of the tree shows that decision trees are sensitive to sampling method.
+
+```{r "Sensitive To Sampling Method Test", fig.height=9}
+worthless.tree_sample2 <- tree(factor(ifelse(worthless_once == 1, yes="Yes", no="No")) ~
+       age + looking_for_work + race + fam_income + married + male + neck_pain + back_pain
+  + alc12mwk2 + factor(srvy_yr) + family_size,
+  control=tree.control(nobs=nrow(dep_tree), mincut=1, minsize=2, mindev=0.001),
+  data=dep_tree2)
+
+plot(worthless.tree_sample2)
+text(worthless.tree_sample2)
+```
+
+### Decision Tree 4: Training Set 2 -- Mindev 0.0005
+Likewise, this decision tree also differs from Decision Tree 2--which was trained with the same minimum deviance parameter but a different training set.
+```{r fig.height=9}
+worthless.tree2_sample2 <- tree(factor(ifelse(worthless_once == 1, yes="Yes", no="No")) ~
+       age + looking_for_work + race + fam_income + married + male + neck_pain + back_pain
+  + alc12mwk2 + factor(srvy_yr) + family_size,
+  control=tree.control(nobs=nrow(dep_tree), mincut=1, minsize=2, mindev=0.0005),
+  data=dep_tree2)
+
+plot(worthless.tree2_sample2)
+text(worthless.tree2_sample2)
+```
+
+```{r}
+worthless.forest = randomForest(
+  factor(ifelse(worthless_once == 1, yes="Yes", no="No")) ~
+    looking_for_work + race + fam_income + married + male + neck_pain + back_pain
+  + alc12mwk2,
+  data=dep_tree, do.trace=10, ntree=100)
+```
+
+# Logistic Regression vs. Trees and Forests: Measures of Accuracy
+Finally, after training all of my models I used various classification metrics to compare them.
+
+```{r "Training Set"}
+roc.tree <- ROCCurve(actual=dep_tree$worthless_once,
+                     predicted=as.data.frame(predict(worthless.tree))$Yes)
+
+roc.tree_sample2 <- ROCCurve(actual=dep_tree$worthless_once,
+                     predicted=as.data.frame(predict(worthless.tree_sample2))$Yes)
+
+roc.tree2 <- ROCCurve(dep_tree$worthless_once,
+                      as.data.frame(predict(worthless.tree2))$Yes)
+
+roc.tree2_sample2 <- ROCCurve(dep_tree$worthless_once,
+                      as.data.frame(predict(worthless.tree2_sample2))$Yes)
+
+roc.forest <- ROCCurve(dep_tree$worthless_once,
+                      as.data.frame(predict(worthless.forest))$Yes)
+
+roc.glm <- ROCCurve(unlist(dep %>%
+                      filter(test == 0) %>%
+                      select(worthless_once)),
+                    worthless_multi.glm$fitted.values)
+```
+
+```{r "Testing Set"}
+roc.tree.test_data <- as.data.frame(predict(worthless.tree,
+                         newdata=as.data.frame(dep
+                         %>% filter(test == 1))))$Yes
+
+roc.tree_sample2.test_data <- as.data.frame(predict(worthless.tree_sample2,
+                         newdata=as.data.frame(dep
+                         %>% filter(test == 1))))$Yes
+
+roc.tree2.test_data <- as.data.frame(predict(worthless.tree2,
+                         newdata=as.data.frame(dep
+                         %>% filter(test == 1))))$Yes
+
+roc.tree2_sample2.test_data <- as.data.frame(predict(worthless.tree2_sample2,
+                         newdata=as.data.frame(dep
+                         %>% filter(test == 1))))$Yes
+
+roc.forest.test_data <- as.data.frame(
+  ifelse(
+    predict(worthless.forest,
+            newdata=as.data.frame(dep %>% filter(test == 1))) == "Yes",
+    yes=1, no=0
+  ))
+
+roc.glm.test_data <- as.data.frame(predict(worthless_multi.glm,
+    type="response",
+    newdata=as.data.frame(dep %>% filter(test == 1)))
+  )$response
+
+roc.tree_test <- ROCCurve(actual=dep.test_labels.worthless,
+                     predicted=roc.tree.test_data)
+
+roc.tree_sample2_test <- ROCCurve(actual=dep.test_labels.worthless,
+                     predicted=roc.tree_sample2.test_data)
+
+roc.tree2_test <- ROCCurve(actual=dep.test_labels.worthless,
+                      predicted=roc.tree2.test_data)
+
+roc.tree2_sample2_test <- ROCCurve(actual=dep.test_labels.worthless,
+                     predicted=roc.tree2_sample2.test_data)
+
+roc.forest_test <- ROCCurve(actual=dep.test_labels.worthless,
+                       predicted=roc.forest.test_data)
+
+roc.glm_test <- ROCCurve(actual=dep.test_labels.worthless,
+                    predicted=roc.glm.test_data)
+```
+
+## ROC Curves
+While the logistic regression was the best fitting curve in both the training and testing sets, it is hard to tell unless you look closely. The most noticeable feature of the ROC curve graphs is the drop-off of performance of the random forest in the validation set. It seems that a multitude of trees does worse than individual decision trees.
+
+```{r "Curve ggplots"}
+# ROC Curve
+roc_plot(roc.tree, roc.tree_sample2, roc.tree2, roc.tree2_sample2, roc.forest, roc.glm,
+         title="ROC Curve (Training Set)",
+         names=c("Decision Tree 1", "Decision Tree 1 (Sample 2)",
+                 "Decision Tree 2", "Decision Tree 2 (Sample 2)",
+                 "Random Forest", "Logistic Regression"))
+
+roc_plot(roc.tree_test, roc.tree_sample2_test, roc.tree2_test, roc.tree2_sample2_test, roc.forest_test, roc.glm_test,
+         title="ROC (Testing Set)",
+         names=c("Decision Tree 1", "Decision Tree 1 (Sample 2)",
+                 "Decision Tree 2", "Decision Tree 2 (Sample 2)",
+                 "Random Forest", "Logistic Regression"))
+```
+
+## Precision-Recall Curve
+The precision-recall curve is another classification metric, which measures the trade-off between how accurate a model is on the data it retrieves (precision), and how many positive cases out of the data it retrieves overall (recall). Unlike the ROC graphs above, these pair of graphs show a stunning difference. While decision trees fit very well to the training data, their performance in the testing set is no better than the logistic regression. On the other hand, the logistic regression is the only model which has similar performance in both sets--suggesting that its coefficient estimates are very stable while decision trees overfit the data.
+
+```{r}
+pr_plot(roc.tree, roc.tree_sample2, roc.tree2, roc.tree2_sample2, roc.forest, roc.glm,
+        title="Precision-Recall Curve (Training Set)",
+        names=c("Decision Tree 1", "Decision Tree 1 (Sample 2)",
+                 "Decision Tree 2", "Decision Tree 2 (Sample 2)",
+                 "Random Forest", "Logistic Regression"))
+
+pr_plot(roc.tree_test, roc.tree_sample2_test, roc.tree2_test, roc.tree2_sample2_test, roc.forest_test, roc.glm_test,
+        title="Precision-Recall Curve (Testing Set)",
+        names=c("Decision Tree 1", "Decision Tree 1 (Sample 2)",
+                 "Decision Tree 2", "Decision Tree 2 (Sample 2)",
+                 "Random Forest", "Logistic Regression"))
+```
+
+## F1 Score
+Lastly, I also considered the F1 score since it is a useful alternative to the ROC curve in the case of severe class imbalance. These graphs tell a similar story to the precision-recall curves. While the logistic regression initially seems worse when looking at the training set, it is the only model which has consistent performance in both the training and testing set.
+
+```{r}
+f1_plot(roc.tree, roc.tree_sample2, roc.tree2, roc.tree2_sample2, roc.forest, roc.glm,
+        title="F1 Score (Training Set)",
+        names=c("Decision Tree 1", "Decision Tree 1 (Sample 2)",
+                 "Decision Tree 2", "Decision Tree 2 (Sample 2)",
+                 "Random Forest", "Logistic Regression"))
+
+f1_plot(roc.tree_test, roc.tree_sample2_test, roc.tree2_test, roc.tree2_sample2_test, roc.forest_test, roc.glm_test,
+        title="F1 Score (Testing Set)",
+        names=c("Decision Tree 1", "Decision Tree 1 (Sample 2)",
+                 "Decision Tree 2", "Decision Tree 2 (Sample 2)",
+                 "Random Forest", "Logistic Regression"))
+```
+
+```{r}
+# # Accuracy
+# roc.tree$data_frame <- roc.tree$data_frame %>%
+#   mutate(acc = (tp + tn)/(tp + tn + fn + fp))
+# 
+# roc.tree2$data_frame <- roc.tree2$data_frame %>%
+#   mutate(acc = (tp + tn)/(tp + tn + fn + 10*fp))
+# 
+# roc.glm$data_frame <- roc.glm$data_frame %>%
+#   mutate(acc = (tp + tn)/(tp + tn + fn + fp))
+# 
+# ggplot(
+#   rbind(roc.tree$data_frame,
+#         roc.tree2$data_frame,
+#         roc.glm$data_frame),
+#   aes(p_thresh, acc, color=model)) +
+#   scale_color_brewer(type="div", palette="Spectral") +
+#   geom_line(size=1.5, linetype="dashed") +
+#   labs(title="Accuracy (Testing Set)",
+#        x="Probability Threshold",
+#        y="Accuracy")
+# 
+# # Weighted Accuracy
+# roc.tree$data_frame <- roc.tree$data_frame %>%
+#   mutate(wacc = (tp + tn)/(tp + tn + 10*fn + 10*fp))
+# 
+# roc.tree2$data_frame <- roc.tree2$data_frame %>%
+#   mutate(wacc = (tp + tn)/(tp + tn + 10*fn + 10*fp))
+# 
+# roc.glm$data_frame <- roc.glm$data_frame %>%
+#   mutate(wacc = (tp + tn)/(tp + tn + 10*fn + 10*fp))
+# 
+# ggplot(
+#   rbind(roc.tree$data_frame,
+#         roc.tree2$data_frame,
+#         roc.glm$data_frame),
+#   aes(p_thresh, wacc, color=model)) +
+#   scale_color_brewer(type="div", palette="Spectral") +
+#   geom_line(size=1.5, linetype="dashed") +
+#   labs(title="Weighted Accuracy (Testing Set)",
+#        x="Probability Threshold",
+#        y="Weighted Accuracy")
+```
+
+```{r "Calculate Lift"}
+# # Lift
+# roc.tree.lift <- prediction(roc.tree.test,
+#                             as.data.frame(dep %>% filter(test == 1))$worthless_once)
+# 
+# roc.tree2.lift <- prediction(roc.tree2.test,
+#                             as.data.frame(dep %>% filter(test == 1))$worthless_once)
+# 
+# roc.glm.lift <- prediction(roc.glm.test,
+#                             as.data.frame(dep %>% filter(test == 1))$worthless_once)
+# 
+# 
+# roc.tree.lift <- performance(roc.tree.lift, x.measure="rpp", measure="lift")
+# roc.tree2.lift <- performance(roc.tree2.lift, x.measure="rpp", measure="lift")
+# roc.glm.lift <- performance(roc.glm.lift, x.measure="rpp", measure="lift")
+# 
+# ggplot(
+#   rbind(data.frame(
+#           x=unlist(roc.tree.lift@x.values), y=unlist(roc.tree.lift@y.values)) %>%
+#           mutate(model="Tree"),
+#         data.frame(
+#           x=unlist(roc.tree2.lift@x.values), y=unlist(roc.tree2.lift@y.values)) %>%
+#           mutate(model="Tree 2"),
+#         data.frame(
+#           x=unlist(roc.glm.lift@x.values), y=unlist(roc.glm.lift@y.values)) %>%
+#           mutate(model="Logistic Regression")),
+#   aes(x, y, color=model)) +
+#   scale_color_brewer(type="div", palette="Spectral") +
+#   geom_line(size=1.5, linetype="dashed") +
+#   labs(title="Lift",
+#        x="RPP",
+#        y="Lift")
+```

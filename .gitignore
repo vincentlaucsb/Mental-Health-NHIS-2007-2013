@@ -1,3 +1,12 @@
+# Mine
+postgres_pw.r
+*.csv
+*.zip
+data
+scratch
+poster
+homework
+
 # History files
 .Rhistory
 .Rapp.history

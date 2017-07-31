@@ -1,0 +1,36 @@
+---
+title: 'Mental Health in the National Health Interview Study: 2007-2013'
+author: "Vincent La"
+date: "June 12, 2017"
+output:
+  pdf_document:
+    pandoc_args: [
+      "-V", "classoption=twocolumn"
+    ]
+  word_document: default
+nocite: |
+  @nhis_2007, @nhis_2008, @nhis_2009, @nhis_2011,
+  @nhis_2012, @nhis_2013, @stargazer, @hosmer2013applied
+bibliography: bibliography.bibtex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, results='hide',
+                      fig.height=3)
+```
+
+```{r child = 'pt1_univariate_logistic.Rmd'}
+```
+
+```{r child = 'pt2_logistic_full_model.Rmd'}
+```
+
+```{r child = 'pt3_decision_trees.Rmd'}
+```
+
+```{r child = 'pt4_summary.Rmd'}
+```
+
+\pagebreak
+
+# Works Cited

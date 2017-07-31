@@ -1,0 +1,5 @@
+- My report is separated into several R and RMD files
+- To compile the entire report with one click:
+ - Open "Mental Health - Final Report.Rmd"
+ - In R: Session >> Set Working Directory >> To Source File Directory
+ - Knit to PDF

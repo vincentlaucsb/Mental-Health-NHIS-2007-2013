@@ -1,0 +1,281 @@
+---
+title: "Full Model"
+author: "Vincent La"
+date: "June 12, 2017"
+output: pdf_document
+bibliography: bibliography.bibtex
+---
+
+```{r setup2, eval=FALSE}
+# Only run this block if knitting this RMD by itself
+source('functions.R')
+source('data.R')
+source('roc_plot.R')
+```
+
+# Logistic Regression: Full Model
+ROC curves are shown below for the models predicting feelings of worthlessness and abnormal sleep. The closeness of the curves for the testing and training sets suggest that our model will generalize well to outside data.
+
+```{r "Multivariate GLM: Full Models"}
+# Note: Can't estimate disability + looking for work at the same time
+worthless_multi.glm <- dep_glm(
+  worthless_once ~ age + black + asian + hispanic + other_race
+  + fam_income35_50k + fam_income50_75k + fam_income75_100k + fam_income101k
+  + looking_for_work + married + male 
+  + english + english*factor(srvy_yr)
+  + neck_pain + back_pain + back_pain*male
+  + alc12mwk2 + I(alc12mwk2^2)
+  + family_size
+  + factor(srvy_yr))
+
+hopeless_multi.glm <- dep_glm(
+  hopeless_once ~ age + black + asian + hispanic + other_race
+  + fam_income35_50k + fam_income50_75k + fam_income75_100k + fam_income101k
+  + looking_for_work + married + male 
+  + english + english*factor(srvy_yr)
+  + neck_pain + back_pain + back_pain*male
+  + alc12mwk2 + I(alc12mwk2^2)
+  + factor(srvy_yr))
+
+sleep_multi.glm <- dep_glm(
+  abnormal_sleep ~ age + black + asian + hispanic + other_race
+  + fam_income35_50k + fam_income50_75k + fam_income75_100k + fam_income101k
+  + looking_for_work + married + male 
+  + english + english*factor(srvy_yr)
+  + neck_pain + back_pain + back_pain*male + back_pain*age
+  + alc12mwk2 + I(alc12mwk2^2)
+  + family_size
+  + factor(srvy_yr))
+```
+
+```{r "Full Model Summaries", eval=FALSE}
+summary(worthless_multi.glm)
+summary(hopeless_multi.glm)
+summary(sleep_multi.glm)
+```
+
+```{r "Multivariate GLM: Regression Table", eval=FALSE}
+# Just Socioeconomic Factors
+stargazer(worthless_multi.glm, hopeless_multi.glm, sleep_multi.glm,
+          keep=c("age", "male", "black", "fam*", "looking_for_work"),
+          notes=c("When controlling for race, whites were the left out group",
+                  REG_TABLE_NOTE.INCOME),
+          title="Full Logistic Regression Model: Socioeconomic Factors",
+          no.space=TRUE)
+
+# Lifestyle and Medical Factors
+stargazer(worthless_multi.glm, hopeless_multi.glm, sleep_multi.glm,
+          keep=c("*pain", "alc12mwk2*"),
+          title="Full Logistic Regression Model: Lifestyle and Medical Factors",
+          no.space=TRUE)
+
+# English as a Primary Language
+stargazer(worthless_multi.glm, hopeless_multi.glm, sleep_multi.glm,
+          keep=c("english"),
+          title="Full Logistic Regression Model: English as a Primary Language",
+          no.space=TRUE)
+```
+
+\begin{table}[!htbp] \centering 
+  \caption{Full Model: Socioeconomic Factors} 
+  \label{} 
+\begin{tabular}{@{\extracolsep{5pt}}lccc} 
+\\[-1.8ex]\hline 
+\hline \\[-1.8ex] 
+ & \multicolumn{3}{c}{\textit{Dependent variable:}} \\ 
+\cline{2-4} 
+\\[-1.8ex] & worthless\_once & hopeless\_once & abnormal\_sleep \\ 
+\\[-1.8ex] & (1) & (2) & (3)\\ 
+\hline \\[-1.8ex] 
+ age & $-$0.0005 & $-$0.004$^{***}$ & 0.009$^{***}$ \\ 
+  & (0.001) & (0.001) & (0.001) \\ 
+  black & $-$0.304$^{***}$ & $-$0.198$^{***}$ & 0.430$^{***}$ \\ 
+  & (0.038) & (0.033) & (0.033) \\ 
+  fam\_income35\_50k & $-$0.410$^{***}$ & $-$0.362$^{***}$ & $-$0.201$^{***}$ \\ 
+  & (0.037) & (0.033) & (0.036) \\ 
+  fam\_income50\_75k & $-$0.634$^{***}$ & $-$0.556$^{***}$ & $-$0.328$^{***}$ \\ 
+  & (0.039) & (0.035) & (0.037) \\ 
+  fam\_income75\_100k & $-$0.983$^{***}$ & $-$0.822$^{***}$ & $-$0.453$^{***}$ \\ 
+  & (0.056) & (0.048) & (0.048) \\ 
+  fam\_income101k & $-$1.136$^{***}$ & $-$1.010$^{***}$ & $-$0.651$^{***}$ \\ 
+  & (0.051) & (0.044) & (0.046) \\ 
+  looking\_for\_work & 0.596$^{***}$ & 0.640$^{***}$ & 0.001 \\ 
+  & (0.046) & (0.042) & (0.051) \\ 
+  male & $-$0.102$^{***}$ & $-$0.196$^{***}$ & 0.126$^{***}$ \\ 
+  & (0.036) & (0.031) & (0.033) \\ 
+  factor(srvy\_yr)2008 & 0.419$^{**}$ & 0.335$^{**}$ & 0.266 \\ 
+  & (0.164) & (0.133) & (0.194) \\ 
+  factor(srvy\_yr)2009 & 0.168 & 0.320$^{**}$ & 0.367$^{**}$ \\ 
+  & (0.153) & (0.126) & (0.182) \\ 
+  factor(srvy\_yr)2011 & 0.162 & 0.329$^{***}$ & 0.402$^{**}$ \\ 
+  & (0.140) & (0.115) & (0.158) \\ 
+  factor(srvy\_yr)2012 & 0.263$^{*}$ & 0.236$^{**}$ & 0.282$^{*}$ \\ 
+  & (0.146) & (0.120) & (0.166) \\ 
+  factor(srvy\_yr)2013 & 0.483$^{***}$ & 0.456$^{***}$ & 0.350$^{**}$ \\ 
+  & (0.144) & (0.119) & (0.162) \\ 
+  family\_size & 0.086$^{***}$ &  & 0.090$^{***}$ \\ 
+  & (0.012) &  & (0.010) \\ 
+  english:factor(srvy\_yr)2008 & $-$0.335$^{*}$ & $-$0.195 & $-$0.239 \\ 
+  & (0.172) & (0.141) & (0.200) \\ 
+  english:factor(srvy\_yr)2009 & $-$0.115 & $-$0.240$^{*}$ & $-$0.346$^{*}$ \\ 
+  & (0.161) & (0.134) & (0.188) \\ 
+  english:factor(srvy\_yr)2011 & $-$0.190 & $-$0.312$^{**}$ & $-$0.328$^{**}$ \\ 
+  & (0.148) & (0.123) & (0.165) \\ 
+  english:factor(srvy\_yr)2012 & $-$0.292$^{*}$ & $-$0.235$^{*}$ & $-$0.208 \\ 
+  & (0.154) & (0.128) & (0.172) \\ 
+  english:factor(srvy\_yr)2013 & $-$0.367$^{**}$ & $-$0.235$^{*}$ & $-$0.240 \\ 
+  & (0.151) & (0.127) & (0.168) \\ 
+  male:back\_pain & $-$0.054 & 0.025 & $-$0.118$^{**}$ \\ 
+  & (0.051) & (0.046) & (0.050) \\ 
+  age:back\_pain &  &  & $-$0.007$^{***}$ \\ 
+  &  &  & (0.001) \\ 
+ \hline \\[-1.8ex] 
+Observations & 127,274 & 127,274 & 127,274 \\ 
+Log Likelihood & $-$36,342.650 & $-$43,091.520 & $-$37,713.600 \\ 
+Akaike Inf. Crit. & 72,745.300 & 86,241.040 & 75,489.200 \\ 
+\hline 
+\hline \\[-1.8ex] 
+\textit{Note:}  & \multicolumn{3}{r}{$^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01} \\ 
+ & \multicolumn{3}{r}{When controlling for race, whites were the left out group} \\ 
+ & \multicolumn{3}{r}{When controlling for income, the lowest income bracket was the left out group} \\ 
+\end{tabular} 
+\end{table} 
+
+\begin{table}[!htbp] \centering 
+  \caption{Full Model: Lifestyle and Medical Factors} 
+  \label{} 
+\begin{tabular}{@{\extracolsep{5pt}}lccc} 
+\\[-1.8ex]\hline 
+\hline \\[-1.8ex] 
+ & \multicolumn{3}{c}{\textit{Dependent variable:}} \\ 
+\cline{2-4} 
+\\[-1.8ex] & worthless\_once & hopeless\_once & abnormal\_sleep \\ 
+\\[-1.8ex] & (1) & (2) & (3)\\ 
+\hline \\[-1.8ex] 
+ neck\_pain & 0.693$^{***}$ & 0.684$^{***}$ & 0.498$^{***}$ \\ 
+  & (0.030) & (0.028) & (0.031) \\ 
+  back\_pain & 0.803$^{***}$ & 0.763$^{***}$ & 1.030$^{***}$ \\ 
+  & (0.035) & (0.031) & (0.074) \\ 
+  alc12mwk2 & $-$0.099$^{***}$ & $-$0.100$^{***}$ & $-$0.168$^{***}$ \\ 
+  & (0.025) & (0.022) & (0.025) \\ 
+  I(alc12mwk2$\hat{\mkern6mu}$2) & 0.017$^{***}$ & 0.015$^{***}$ & 0.021$^{***}$ \\ 
+  & (0.004) & (0.003) & (0.004) \\ 
+  male:back\_pain & $-$0.054 & 0.025 & $-$0.118$^{**}$ \\ 
+  & (0.051) & (0.046) & (0.050) \\ 
+  age:back\_pain &  &  & $-$0.007$^{***}$ \\ 
+  &  &  & (0.001) \\ 
+ \hline \\[-1.8ex] 
+Observations & 127,274 & 127,274 & 127,274 \\ 
+Log Likelihood & $-$36,342.650 & $-$43,091.520 & $-$37,713.600 \\ 
+Akaike Inf. Crit. & 72,745.300 & 86,241.040 & 75,489.200 \\ 
+\hline 
+\hline \\[-1.8ex] 
+\textit{Note:}  & \multicolumn{3}{r}{$^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01} \\ 
+\end{tabular} 
+\end{table} 
+
+\begin{table}[!htbp] \centering 
+  \caption{Full Model: English as a Primary Language} 
+  \label{} 
+\begin{tabular}{@{\extracolsep{5pt}}lccc} 
+\\[-1.8ex]\hline 
+\hline \\[-1.8ex] 
+ & \multicolumn{3}{c}{\textit{Dependent variable:}} \\ 
+\cline{2-4} 
+\\[-1.8ex] & worthless\_once & hopeless\_once & abnormal\_sleep \\ 
+\\[-1.8ex] & (1) & (2) & (3)\\ 
+\hline \\[-1.8ex] 
+ english & 0.104 & $-$0.106 & 0.650$^{***}$ \\ 
+  & (0.124) & (0.103) & (0.137) \\ 
+  english:factor(srvy\_yr)2008 & $-$0.335$^{*}$ & $-$0.195 & $-$0.239 \\ 
+  & (0.172) & (0.141) & (0.200) \\ 
+  english:factor(srvy\_yr)2009 & $-$0.115 & $-$0.240$^{*}$ & $-$0.346$^{*}$ \\ 
+  & (0.161) & (0.134) & (0.188) \\ 
+  english:factor(srvy\_yr)2011 & $-$0.190 & $-$0.312$^{**}$ & $-$0.328$^{**}$ \\ 
+  & (0.148) & (0.123) & (0.165) \\ 
+  english:factor(srvy\_yr)2012 & $-$0.292$^{*}$ & $-$0.235$^{*}$ & $-$0.208 \\ 
+  & (0.154) & (0.128) & (0.172) \\ 
+  english:factor(srvy\_yr)2013 & $-$0.367$^{**}$ & $-$0.235$^{*}$ & $-$0.240 \\ 
+  & (0.151) & (0.127) & (0.168) \\ 
+ \hline \\[-1.8ex] 
+Observations & 127,274 & 127,274 & 127,274 \\ 
+Log Likelihood & $-$36,342.650 & $-$43,091.520 & $-$37,713.600 \\ 
+Akaike Inf. Crit. & 72,745.300 & 86,241.040 & 75,489.200 \\ 
+\hline 
+\hline \\[-1.8ex] 
+\textit{Note:}  & \multicolumn{3}{r}{$^{*}$p$<$0.1; $^{**}$p$<$0.05; $^{***}$p$<$0.01} \\ 
+\end{tabular} 
+\end{table} 
+
+```{r "Worthlessness ROC Curve", fig.height=4}
+# Note: If this ever stops working, it's probably because of missing values
+
+# Get Predicted Values
+worthless_multi.predicted <- as.data.frame(
+  predict(worthless_multi.glm, newdata=dep %>% filter(test==1),
+          type=c("response")))$response
+
+# Get ROC Curve Values
+worthless_multi.roc_train <- ROCCurve(
+  actual=dep.train_labels.worthless,
+  predicted=worthless_multi.glm$fitted.values
+)
+worthless_multi.roc_test <- ROCCurve(
+  actual=dep.test_labels.worthless,
+  predicted=worthless_multi.predicted
+)
+```
+
+```{r "Hopeless ROC Curve", fig.height=4}
+# Get Predicted Values
+hopeless_multi.predicted <- as.data.frame(
+  predict(hopeless_multi.glm,
+          newdata=dep %>% filter(test==1),
+          type=c("response")))$response
+
+# Get ROC Curve Values
+hopeless_multi.roc_train <- ROCCurve(
+  actual=dep.train_labels.hopeless,
+  predicted=hopeless_multi.glm$fitted.values)
+
+hopeless_multi.roc_test <- ROCCurve(
+  actual=dep.test_labels.hopeless,
+  predicted=hopeless_multi.predicted)
+```
+
+```{r "Abnormal Sleep ROC Curve"}
+# Get Predicted Values
+sleep_multi.predicted <- as.data.frame(
+  predict(sleep_multi.glm,
+          newdata=dep %>%
+            filter(test==1),
+            type=c("response")))$response
+
+# Get ROC Curve Values
+sleep_multi.roc_train <- ROCCurve(
+  actual=dep.train_labels.worthless,
+  predicted=sleep_multi.glm$fitted.values
+)
+sleep_multi.roc_test <- ROCCurve(
+  actual=dep.test_labels.worthless,
+  predicted=sleep_multi.predicted
+)
+```
+
+```{r "ggplots", fig.height=5}
+plot1 <- roc_plot(worthless_multi.roc_train, worthless_multi.roc_test,
+         title="ROC Curve for Feelings of Worthlessness",
+         names=c("Training", "Testing"))
+
+plot2 <- roc_plot(hopeless_multi.roc_train, hopeless_multi.roc_test,
+         title="ROC Curve for Feelings of Hopelessness",
+         names=c("Training", "Testing")) + theme(legend.position="none")
+
+plot3 <- roc_plot(sleep_multi.roc_train, sleep_multi.roc_test,
+         title="ROC Curve for Abnormal Sleep",
+         names=c("Training", "Testing")) + theme(legend.position="none")
+
+grid.arrange(plot1, plot2, plot3,
+             layout_matrix = cbind(
+              c(1, 2), c(1, 3)))
+```
